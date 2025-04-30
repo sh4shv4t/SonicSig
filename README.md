@@ -11,7 +11,7 @@ This project is a web-based **song recognition system** built with Flask. Users 
 ### 1. Clone the Repository
 
 ```sh
-git clone <your-repo-url>
+git clone https://github.com/sh4shv4t/SonicSig
 cd song_recognizer_app
 ```
 
