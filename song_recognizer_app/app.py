@@ -2,9 +2,14 @@ from flask import Flask, render_template, request, flash, redirect, url_for
 import os
 from werkzeug.utils import secure_filename
 from recognizer import recognize_song
+import librosa
+import tensorflow as tf
+import tensorflow_hub as hub
+from sklearn.metrics.pairwise import cosine_similarity
+import secrets
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'  # Required for flashing messages
+app.secret_key = secrets.token_hex(32)
 
 # Configure upload folders
 UPLOAD_FOLDER = os.path.join('static', 'uploads')
@@ -22,6 +27,20 @@ app.config['QUERY_FOLDER'] = QUERY_FOLDER
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def extract_yamnet_embeddings(file_path, target_sr=16000):
+    """Extract embeddings using YAMNet."""
+    audio, sr = librosa.load(file_path, sr=target_sr, mono=True)
+    waveform = tf.convert_to_tensor(audio, dtype=tf.float32)
+    yamnet_model = hub.load('https://tfhub.dev/google/yamnet/1')
+    scores, embeddings, spectrogram = yamnet_model(waveform)
+    return embeddings.numpy()
+
+def compare_yamnet_embeddings(emb1, emb2):
+    """Compare YAMNet embeddings using cosine similarity."""
+    avg_emb1 = emb1.mean(axis=0).reshape(1, -1)
+    avg_emb2 = emb2.mean(axis=0).reshape(1, -1)
+    return cosine_similarity(avg_emb1, avg_emb2)[0][0]
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -41,13 +60,57 @@ def index():
             filepath = os.path.join(app.config['QUERY_FOLDER'], filename)
             file.save(filepath)
             
-            # Perform song recognition
-            result = recognize_song(filepath)
+            # Perform fingerprint-based recognition
+            fingerprint_result = recognize_song(filepath)
+            
+            # Perform embedding-based recognition
+            query_embeddings = extract_yamnet_embeddings(filepath)
+            embedding_results = []
+            for song_file in os.listdir(app.config['DATABASE_FOLDER']):
+                if allowed_file(song_file):
+                    song_path = os.path.join(app.config['DATABASE_FOLDER'], song_file)
+                    song_embeddings = extract_yamnet_embeddings(song_path)
+                    similarity = compare_yamnet_embeddings(query_embeddings, song_embeddings)
+                    embedding_results.append((song_file, similarity))
+            
+            # Find the best match from embeddings
+            embedding_results.sort(key=lambda x: x[1], reverse=True)
+            best_embedding_match = embedding_results[0] if embedding_results else None
+            
+            # Combine results
+            if fingerprint_result['match_found'] and best_embedding_match:
+                # Convert confidence to float (handle both '95%' and float cases)
+                try:
+                    fingerprint_conf = float(str(fingerprint_result['confidence']).strip('%'))
+                except Exception:
+                    fingerprint_conf = 0.0
+                embedding_conf = best_embedding_match[1] * 100  # Convert to percentage for fair comparison
+
+                combined_result = {
+                    'match_found': True,
+                    'song_name': fingerprint_result['song_name'] if fingerprint_conf > embedding_conf else best_embedding_match[0],
+                    'confidence': max(fingerprint_conf, embedding_conf),
+                    'matches': fingerprint_result['matches']
+                }
+            elif fingerprint_result['match_found']:
+                combined_result = fingerprint_result
+            elif best_embedding_match:
+                combined_result = {
+                    'match_found': True,
+                    'song_name': best_embedding_match[0],
+                    'confidence': best_embedding_match[1] * 100,
+                    'matches': 0
+                }
+            else:
+                combined_result = {
+                    'match_found': False,
+                    'message': 'No match found'
+                }
             
             # Delete the query file after processing
             os.remove(filepath)
             
-            return render_template('result.html', result=result)
+            return render_template('result.html', result=combined_result)
     
     # Get list of songs in database
     database_songs = []
