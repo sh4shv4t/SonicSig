@@ -100,7 +100,3 @@ song_recognizer_app/
 - The app is for educational/demo purposes and can be extended for larger-scale use.
 
 ---
-
-## License
-
-MIT License (or specify your license here)
