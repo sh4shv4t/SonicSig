@@ -1,0 +1,10 @@
+Flask
+librosa
+numpy
+scipy
+matplotlib
+soundfile
+tensorflow
+tensorflow_hub
+scikit-learn
+Werkzeug
