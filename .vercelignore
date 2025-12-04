@@ -1,0 +1,12 @@
+# Exclude uploads directories
+**/uploads/
+
+# Exclude cache and temporary files
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Exclude other unnecessary files
+*.log
+*.tmp
+*.bak
