@@ -1,0 +1,4 @@
+# Ignore all uploads directories
+**/uploads/
+**/__pycache__/
+**/queries/
